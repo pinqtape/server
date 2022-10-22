@@ -268,15 +268,28 @@ class Rooms {
     }
 
     join_room(ws, roomID) {
-        this[roomID]["players"][ws.id] = { // создаю обьект игрока в комнате
-            clan: ws.clan,
-            lvl: ws.lvl,
-            nick: ws.nick,
-            kills: 0,
-            deaths: 0,
-            team : this.get_team(roomID),
-            id_base: ws.id_base
-        };
+        if (this[roomID]["info"]["mode"] != "DM") {
+            this[roomID]["players"][ws.id] = { // создаю обьект игрока в комнате
+                clan: ws.clan,
+                lvl: ws.lvl,
+                nick: ws.nick,
+                kills: 0,
+                deaths: 0,
+                team : this.get_team(roomID),
+                id_base: ws.id_base
+            }
+        } 
+        else {
+            this[roomID]["players"][ws.id] = { // создаю обьект игрока в комнате
+                clan: ws.clan,
+                lvl: ws.lvl,
+                nick: ws.nick,
+                kills: 0,
+                deaths: 0,
+                team: "red",
+                id_base: ws.id_base
+            }
+        }
         EVENTS.subscribe(ws, roomID); // подписываю
         SERVER_INFO.add_object(roomID, ws.id); // добавляю обьект инфы игрока
         server.publish(roomID, JSON.stringify({
