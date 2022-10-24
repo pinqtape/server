@@ -6,12 +6,12 @@ if ($user) { // если пользователь найден
     if (password_verify($json->password, $user->password)) { // если пороль совпадает с хешем в таблице
         $_SESSION["user"] = $user;
 
-        $ip = "83.149.21.77";
-        $user->address = ip2long($ip);
-        R::store($user);
+        // $ip = "83.149.21.77";
+        // $user->address = ip2long($ip);
+        // R::store($user);
 
-        // $current_ip = getenv('REMOTE_ADDR');
-        // $user_ip = long2ip($user->address);
+        $current_ip = getenv('REMOTE_ADDR');
+        $user_ip = long2ip($user->address);
         if ($current_ip == $user_ip) {
             echo json_encode([
                 "type" => "complete",
