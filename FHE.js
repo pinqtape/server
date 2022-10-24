@@ -68,7 +68,7 @@ server.ws("/*", (ws) => {
             }
 
             case "PING": {
-                EVENTS.send(ws, "PING", "")
+                EVENTS.send(ws, "PING", ws.ping())
                 break;
             }
 
