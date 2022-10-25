@@ -10,10 +10,17 @@ if ($user) { // если пользователь найден
         // $user->address = ip2long($ip);
         // R::store($user);
 
-        $cur_ip = getenv('REMOTE_ADDR');
-        $user_ip = long2ip($user->address);
+        // $cur_ip = getenv('REMOTE_ADDR');
+        // $user_ip = long2ip($user->address);
         
-        if ($cur_ip == $user_ip) {
+        // if ($cur_ip == $user_ip) {
+        // }
+        // else {
+        //     echo json_encode([
+        //         "type" => "ERROR",
+        //         "action" => "Your IP address is incorrect"
+        //     ]);
+        // };
             echo json_encode([
                 "type" => "complete",
                 "action" => [
@@ -26,13 +33,7 @@ if ($user) { // если пользователь найден
                     "cash" => $user->cash
                 ]
             ]);
-        }
-        else {
-            echo json_encode([
-                "type" => "ERROR",
-                "action" => "Your IP address is incorrect"
-            ]);
-        };
+
         
     }
     else {
