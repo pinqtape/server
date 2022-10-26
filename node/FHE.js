@@ -93,17 +93,7 @@ server.ws("/*", (ws) => {
             }
 
             case "FLAG": {
-                server.publish(ws.room_id, message);
-                switch (json.action) {     
-                    case "DONES_FLAG": {
-                        ROOMS.dones_flag(ws, json);
-                        break;
-                    }
-
-                    case "NNN": {
-                        break;
-                    }
-                }
+                ROOMS.flag(ws, json);
                 break;
             }
 
@@ -269,7 +259,11 @@ class Rooms {
                 red: 0,
                 blue: 0
             },
-            start: false
+            start: false,
+            flag: {
+                red: -1,
+                blue: -1
+            }
         };
         SERVER_INFO.add_room(room_id)
         ROOMS.join_room(ws, room_id) // вызываю метод войти в комнату после того как комната создана
@@ -277,7 +271,7 @@ class Rooms {
     }
 
     join_room(ws, roomID) {
-        if (this[roomID]["info"]["mode"] != "DM") {
+        // if (this[roomID]["info"]["mode"] == "DM") {
             this[roomID]["players"][ws.id] = { // создаю обьект игрока в комнате
                 clan: ws.clan,
                 lvl: ws.lvl,
@@ -287,18 +281,20 @@ class Rooms {
                 team : this.get_team(roomID),
                 id_base: ws.id_base
             }
-        } 
-        else {
-            this[roomID]["players"][ws.id] = { // создаю обьект игрока в комнате
-                clan: ws.clan,
-                lvl: ws.lvl,
-                nick: ws.nick,
-                kills: 0,
-                deaths: 0,
-                team: "red",
-                id_base: ws.id_base
-            }
-        }
+        // } 
+        // else {
+        //     this[roomID]["players"][ws.id] = { // создаю обьект игрока в комнате
+        //         clan: ws.clan,
+        //         lvl: ws.lvl,
+        //         nick: ws.nick,
+        //         kills: 0,
+        //         deaths: 0,
+        //         team : this.get_team(roomID),
+        //         id_base: ws.id_base
+        //     }
+        // }
+
+
         EVENTS.subscribe(ws, roomID); // подписываю
         SERVER_INFO.add_object(roomID, ws.id); // добавляю обьект инфы игрока
         server.publish(roomID, JSON.stringify({
@@ -306,7 +302,7 @@ class Rooms {
                 action: this[roomID],
                 action2: ws.id
         }));
-        console.log(this[roomID])
+        // console.log(this[roomID])
     }
 
     leave_room(ws) {
@@ -426,12 +422,54 @@ class Rooms {
         });
     }
 
-    dones_flag(ws, json) {
+    flag(ws, json) {
         const roomID = ws.room_id;
-        const teamPoint = this[roomID]["players"][ws.id]["team"];
-        this[roomID]["score"][teamPoint] += 1;
-        this.is_room_end(roomID, teamPoint);
-        EVENTS.publish(roomID, "STATE", this[roomID]); // броадкаст инфы
+        const playerID = ws.id;
+        switch (json.action) {
+            case "TAKE_FLAG": {
+                // где не равно -1 значит флаг занят 
+                if (this[roomID]["flag"][json.action3] == -1) {
+                    this[roomID]["flag"][json.action3] = playerID;
+                    server.publish(roomID, JSON.stringify(json));
+                    console.log("TAKE FLAG: " + JSON.stringify(this[roomID]["flag"]));
+                } else {
+                    console.log("flag have own");
+                };
+                break;
+            }
+
+            case "LOST_FLAG": {
+                this[roomID]["flag"][json.action3] = -1
+                server.publish(roomID, JSON.stringify(json));
+                console.log("LOST FLAG: " + JSON.stringify(this[roomID]["flag"]));
+                break;
+            }
+
+            case "DONES_FLAG": {
+                // json.action3 = команда игрока который донёс
+                const fhe = json.action3 == "red" ? "blue" : "red"
+                this[roomID]["flag"][fhe] = -1
+
+                const teamPoint = json.action3;
+                this[roomID]["score"][teamPoint] += 1;
+
+                this.is_room_end(roomID, teamPoint);
+
+                server.publish(roomID, JSON.stringify(json));
+                EVENTS.publish(roomID, "STATE", this[roomID]); // броадкаст инфы
+
+                console.log("LOST FLAG: " + JSON.stringify(this[roomID]["flag"]));
+                console.log(this[roomID])
+                break;
+            }
+
+            // case "RETURN_FLAG": {
+            //     this[roomID]["flag"][json.action3] = -1
+            //     server.publish(roomID, JSON.stringify(json));
+            //     console.log("LOST FLAG: " + JSON.stringify(this[roomID]["flag"]));
+            //     break;
+            // }
+        }
     }
 
     take_boost(roomID, json) {
