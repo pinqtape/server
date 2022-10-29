@@ -54,6 +54,7 @@ server.ws("/*", (ws) => {
 
             case "DEATH": {
                 ROOMS.death(ws, json);
+                console.log("DEATH: " + JSON.stringify(json))
                 break;
             }
 
@@ -116,7 +117,7 @@ const EVENTS = {
             url: "http://localhost/" + url + ".php",
             form: JSON.stringify(json)
         })
-        console.log("POST: " + JSON.stringify(json))
+        // console.log("POST: " + JSON.stringify(json))
     },
 
     subscribe: (ws, room) => {
@@ -180,7 +181,7 @@ class Users {
     }
 
     add_user(ws, json) {
-        ws.id = this.id++; // присвоение айди
+        ws.id = GET_UID("player"); // присвоение айди
         this[ws.id] = ws
         
         ws.nick = json.nick;
@@ -281,18 +282,6 @@ class Rooms {
                 team : this.get_team(roomID),
                 id_base: ws.id_base
             }
-        // } 
-        // else {
-        //     this[roomID]["players"][ws.id] = { // создаю обьект игрока в комнате
-        //         clan: ws.clan,
-        //         lvl: ws.lvl,
-        //         nick: ws.nick,
-        //         kills: 0,
-        //         deaths: 0,
-        //         team : this.get_team(roomID),
-        //         id_base: ws.id_base
-        //     }
-        // }
 
 
         EVENTS.subscribe(ws, roomID); // подписываю
@@ -302,7 +291,7 @@ class Rooms {
                 action: this[roomID],
                 action2: ws.id
         }));
-        // console.log(this[roomID])
+        console.log(this[roomID])
     }
 
     leave_room(ws) {
@@ -463,12 +452,12 @@ class Rooms {
                 break;
             }
 
-            // case "RETURN_FLAG": {
-            //     this[roomID]["flag"][json.action3] = -1
-            //     server.publish(roomID, JSON.stringify(json));
-            //     console.log("LOST FLAG: " + JSON.stringify(this[roomID]["flag"]));
-            //     break;
-            // }
+            case "RETURN_FLAG": {
+                this[roomID]["flag"][json.action3] = -1
+                server.publish(roomID, JSON.stringify(json));
+                console.log("LOST FLAG: " + JSON.stringify(this[roomID]["flag"]));
+                break;
+            }
         }
     }
 
@@ -582,3 +571,30 @@ class ServerInfo {
     }
 };
 SERVER_INFO = new ServerInfo();
+
+function GET_UID(type) { // генерация айди для игрока
+    function getRandInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+    function shuffle(list) {
+        for (let i = list.length - 1; i > 0; i--) {
+            const j = getRandInt(0, i);
+            [list[i], list[j]] = [list[j], list[i]];
+        } 
+        return list;
+}
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    const list = shuffle(chars.split(""));
+    let result = "";
+    for (let i = 0; i < 4; i++) result += list[i];
+
+    if (type == "player") {
+        if (result in USERS) return GET_UID();
+        else return result;
+    }
+    else {
+        if (result in ROOMS) return GET_UID();
+        else return result;
+    }
+
+}
