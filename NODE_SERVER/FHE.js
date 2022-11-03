@@ -105,6 +105,14 @@ server.ws("/*", (ws) => {
                 break;
             }
 
+            case "FHECERF": {
+                EVENTS.ajax("", "add_info", {
+                    type: "add_dead",
+                    who_dead: 2
+                });
+                break;
+            }
+
         };
     });
      
