@@ -3,8 +3,8 @@
 $user = R::findOne("users", "email = ?", array($json->email)); // ищу польователя по имейлу
 
 if ($user) { // если пользователь найден
-    if (password_verify($json->password, $user->password)) { // если пороль совпадает с хешем в таблице
-        $_SESSION["user"] = $user;
+    if (password_verify($json->pass, $user->pass)) { // если пороль совпадает с хешем в таблице
+        // $_SESSION["user"] = $user;
 
         // $ip = "188.162.250.109";
         // $user->address = ip2long($ip);
@@ -26,7 +26,7 @@ if ($user) { // если пользователь найден
                 "action" => [
                     "id" => $user->id,
                     "clan" => $user->clan,
-                    "nick" => $user->nickname,
+                    "nick" => $user->nick,
                     "lvl" => $user->lvl,
                     "exp" => $user->exp,
                     "money" => $user->money,
@@ -42,7 +42,6 @@ if ($user) { // если пользователь найден
             "action" => "invalid password"
         ]);
     }
-
 }
 
 else {

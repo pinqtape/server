@@ -60,6 +60,11 @@ server.ws("/*", (ws) => {
                 break;
             }
 
+            case "GET_ONEROOM": {
+                EVENTS.send(ws, "GET_ONEROOM", ROOMS[json.roomID]["players"]);
+                break;
+            }
+
             case "PING": {
                 EVENTS.send(ws, "PING", json.action);
                 break;
@@ -100,16 +105,8 @@ server.ws("/*", (ws) => {
                 break;
             }
 
-            case "REGAUTH": {
-                EVENTS.ajax(ws, json.type2, json);
-                break;
-            }
-
-            case "FHECERF": {
-                EVENTS.ajax("", "add_info", {
-                    type: "add_dead",
-                    who_dead: 2
-                });
+            case "AJAX": {
+                EVENTS.ajax(ws, json.url, json);
                 break;
             }
 
@@ -135,6 +132,7 @@ const EVENTS = {
         }
     };
         POST();
+        console.log("POST: " + "http://localhost/"+url+".php")
     },
 
     subscribe: (ws, room) => {
@@ -314,16 +312,16 @@ class Rooms {
             action2: ws.id
         };
         if (roomID in this) {
-            delete this[roomID]["players"][ws.id];
+            // delete this[roomID]["players"][ws.id];
             ws.send(JSON.stringify(answer));
             server.publish(roomID, JSON.stringify(answer));
 
             SERVER_INFO.delete_object(roomID, ws.id);
             EVENTS.subscribe(ws, "LOBBY");
-            if (server.num_of_subscribers(roomID) < 1) { // если в комнате 0 человек комната удаляется (переделать под игроков в комнате без наблюдения)
-                delete this[roomID]
-                console.log("room delete (players was 0)")
-            };
+            // if (server.num_of_subscribers(roomID) < 1) { // если в комнате 0 человек комната удаляется (переделать под игроков в комнате без наблюдения)
+            //     delete this[roomID]
+            //     console.log("room delete (players was 0)")
+            // };
         }
         else {
             EVENTS.subscribe(ws, "LOBBY");
@@ -523,15 +521,15 @@ class Rooms {
 };
 ROOMS = new Rooms();
 
- class Chat { // доделать chatevery
+ class Chat { 
     constructor() {
         this.CHAT = []
-        // let chatevery = 0;
+        this.chatevery = 0;
     }
 
     add_message(ws, json) {
         if (ws != "system") {
-            chatevery += 1;
+            this.chatevery += 1;
             this.CHAT.push({
                 id: ws.id,
                 id_base: ws.id_base,
@@ -539,9 +537,9 @@ ROOMS = new Rooms();
                 nick: ws.nick,
                 msg: json.action
             });
-            if (chatevery >= 10) {
+            if (this.chatevery >= 10) {
                 this.add_message("system", "");
-                chatevery = 0;
+                this.chatevery = 0;
             };
         } else { 
             this.CHAT.push({
@@ -611,7 +609,7 @@ class ServerInfo {
 };
 SERVER_INFO = new ServerInfo();
 
-function GET_UID(type) { // генерация айди для игрока
+function GET_UID(type) { // генерация айди
     function getRandInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
     }

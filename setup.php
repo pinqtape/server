@@ -8,7 +8,7 @@ if (!R::testConnection()) {
     exit("Нет подключение с  базой данных");
 } 
 else {
-    session_start();
+    // session_start();
     $post = file_get_contents("php://input");
     $json = json_decode($post, false);
 };
