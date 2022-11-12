@@ -1,14 +1,14 @@
-const axios = require('axios');
 const HyperExpress = require("hyper-express");
 const server = new HyperExpress.Server();
-//server.listen(process.env.PORT || 6400 ) + console.log("server started, port 6400");
-//const ws_url = "http://localhost/my_php/";
-const ws_url = "http://www.endless-conflict.online/";
-server.listen("http://www.endless-conflict.online/" || 6400 ) + console.log("server started, port 6400");
+const ws_url = "http://localhost/my_php/";
+//const ws_url = "http://www.endless-conflict.online/my_php/";
+server.listen(process.env.PORT || 6400) + console.log("server started, port 6400");
+const axios = require('axios');
 
 // process.on('uncaughtException', function(error) {
 //     console.log(error)
 // });
+
 server.ws("/*", (ws) => {
     ws.on("message", (message) => { const json = JSON.parse(message);
         switch (json.type) {
