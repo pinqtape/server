@@ -1,7 +1,10 @@
+const axios = require('axios');
 const HyperExpress = require("hyper-express");
 const server = new HyperExpress.Server();
-server.listen(process.env.PORT || 6400 ) + console.log("server started, port 6400");
-const axios = require('axios');
+//server.listen(process.env.PORT || 6400 ) + console.log("server started, port 6400");
+//const ws_url = "http://localhost/my_php/";
+const ws_url = "http://www.endless-conflict.online/";
+server.listen("http://www.endless-conflict.online/" || 6400 ) + console.log("server started, port 6400");
 
 // process.on('uncaughtException', function(error) {
 //     console.log(error)
@@ -133,7 +136,7 @@ const EVENTS = {
     ajax: (ws, url, json) => { 
         const POST = async () => {
         try {
-            const resp = await axios.post("http://localhost/"+url+".php", JSON.stringify(json));
+            const resp = await axios.post(ws_url+url+".php", JSON.stringify(json));
             if (ws != "") {
                 ws.send(JSON.stringify(resp.data))
             }
@@ -143,7 +146,7 @@ const EVENTS = {
         }
     };
         POST();
-        // console.log("POST: " + "http://localhost/"+url+".php")
+        // console.log("POST: " + ws_url+url+".php")
     },
 
     subscribe: (ws, room) => {
