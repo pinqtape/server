@@ -1,29 +1,30 @@
 const HyperExpress = require("hyper-express");
 const server = new HyperExpress.Server();
-const ws_url = "http://localhost/my_php/";
-//const ws_url = "http://www.endless-conflict.online/my_php/";
 server.listen(process.env.PORT || 6400) + console.log("server started, port 6400");
 const axios = require('axios');
+
+const ws_url = "http://localhost:7777/endless-conflict.online/my_php/";
 
 // process.on('uncaughtException', function(error) {
 //     console.log(error)
 // });
 
 server.ws("/*", (ws) => {
+    setTimeout(() => USERS.not_auth(ws), 1000); // on connect
     ws.on("message", (message) => { const json = JSON.parse(message);
         switch (json.type) {
             case "MOVE": {
-                ws.publish(ws.topics[0], message);
+                ws.publish(ws.roomID, message);
                 break;
             }
 
             case "FIRE": {
-                ws.publish(ws.topics[0], message);
+                ws.publish(ws.roomID, message);
                 break;
             }
 
             case "INFO": { 
-                server.publish(ws.topics[0], message);
+                server.publish(ws.roomID, message);
                 break;
             }
 
@@ -33,23 +34,20 @@ server.ws("/*", (ws) => {
             }
 
             case "JOIN": {
+                // json.action айди комнаты 
+                // json.actino2 параметр вхождения
                 if (json.action in ROOMS) { // если комната есть 
-                    if (ROOMS.is_full(json.action)) {
+                    if (ROOMS.is_full(json.action, json.action2)) {
+                        ROOMS.join_room(ws, json.action, json.action2);
+                    } else {
                         EVENTS.send(ws, "ERROR", "room is full");
                     }
-                    else ROOMS.join_room(ws, json.action);
-                }
-                else EVENTS.send(ws, "ERROR", "room does not exist");
+                } else EVENTS.send(ws, "ERROR", "room does not exist");
                 break;
             }
 
             case "LEAVE": {
                 ROOMS.leave_room(ws);
-                break;
-            }
-
-            case "RESPAWN": {
-                EVENTS.respawn(ws, json);
                 break;
             }
 
@@ -59,7 +57,7 @@ server.ws("/*", (ws) => {
             }
 
             case "GET_ROOMS": {
-                EVENTS.send(ws, "GET_ROOMS", ROOMS);
+                EVENTS.send(ws, "GET_ROOMS", ROOMS.get_rooms());
                 break;
             }
 
@@ -85,6 +83,11 @@ server.ws("/*", (ws) => {
                 break;
             }
 
+            case "PRIVATE_CHAT": { // изменить на INFO
+                USERS.private_chat(ws, json);
+                break;
+            }
+
             case "GET_CHAT": { // изменить на INFO
                 EVENTS.send(ws, "GET_CHAT", CHAT.get_chat());
                 break;
@@ -95,8 +98,12 @@ server.ws("/*", (ws) => {
                 break;
             }
 
-            case "NEW_SPAWN": {
-                setTimeout(() => EVENTS.respawn(ws, json) , 5000);
+            case "RESPAWN": {
+                if (json.action == "RESPAWN") { // если зашел в комнату
+                    EVENTS.respawn(ws, json); 
+                } else {                       // если убили
+                    setTimeout(() => EVENTS.respawn(ws, json) , Math.random() * (5000 - 2500) + 2500);
+                }
                 break;
             }
 
@@ -106,12 +113,7 @@ server.ws("/*", (ws) => {
             }
 
             case "BOOST": {
-                ROOMS.take_boost(ws.room_id, json);
-                break;
-            }
-
-            case "CONNECT": {
-                USERS.add_user(ws, json);
+                ROOMS.take_boost(ws.roomID, json);
                 break;
             }
 
@@ -134,32 +136,33 @@ server.ws("/*", (ws) => {
 });
 const EVENTS = {
     ajax: (ws, url, json) => { 
-        const POST = async () => {
-        try {
-            const resp = await axios.post(ws_url+url+".php", JSON.stringify(json));
-            if (ws != "") {
-                ws.send(JSON.stringify(resp.data))
+        const POST = async () => { try {
+            const answer = await axios.post(ws_url+url+".php", JSON.stringify(json));
+            if (ws != "") { // если запрос нужно отправить игроку
+                // console.log(answer.data)
+                ws.send(JSON.stringify(answer.data))
+                if (answer.data.type == "auth") {
+                    USERS.add_user(ws, answer.data.action);
+                }
             }
-            // console.log(resp.data);
         } catch (err) {
-            console.error(err);
+            // console.error(err);
         }
     };
         POST();
-        // console.log("POST: " + ws_url+url+".php")
+        // console.log("POST: " + ws_url+url+".php" + JSON.stringify(json, 4, null))
     },
 
     subscribe: (ws, room) => {
-        ws.room_id = room;
-        ws.alive = 0;
-
-        ws.unsubscribe(ws.topics[0]);
+        ws.topics.forEach(name => ws.unsubscribe(name));
         ws.subscribe(room);
+        ws.roomID = room;
+        // ws.alive = 0;
     },
 
     disconnect: (ws) => {
         if (ws.id in USERS)  {
-            if (ws.room_id != "LOBBY") { // если игрок находился в комнате
+            if (ws.roomID != "LOBBY") { // если игрок находился в комнате
                 ROOMS.leave_room(ws); // оповещение игроков о дисконекте игрока(если игрок в комнате)
                 USERS.delete_user(ws); // удаление игрока из массива игроков
                 console.log("user delete (was in room)");
@@ -173,9 +176,9 @@ const EVENTS = {
     },
 
     respawn: (ws, json) => {
-        if (ws.topics[0] != "LOBBY") { // если игрок не в лобби
+        if (ws.roomID != "LOBBY") { // если игрок не в лобби
             json.type = "RESPAWN";
-            server.publish(ws.topics[0], JSON.stringify(json));
+            server.publish(ws.roomID, JSON.stringify(json));
             ws.alive = 1;
         }
     },
@@ -204,49 +207,47 @@ const EVENTS = {
 
 class Users {
     constructor() {
-        this.USERS = {};
-        this.id = 0;
-        this.ARRAY_USERS = {};
-        this.online =0;
+        this.online = 0;
+        this.ARRAY_USERS = [];
     }
 
     add_user(ws, json) {
-        ws.id = GET_UID("player"); // присвоение айди
-        this[ws.id] = ws
-        
+        // if (json.id in this) this.kick(this[json.id]); // кикает игрока если этот айди уже есть в массиве
+        ws.id = json.id;
+        this[ws.id] = ws;
+        ws.roomID = "LOBBY";
         ws.nick = json.nick;
-        ws.id_base = json.id_base;
-        ws.room_id = "LOBBY";
         ws.clan = json.clan;
         ws.lvl = json.lvl;
         ws.alive = 1; // 1 жив, 0 мёртв
-         
+
         this.add_user_array(ws);
-        ws.subscribe("LOBBY");
+        EVENTS.subscribe(ws, "LOBBY");
 
         ws.send(JSON.stringify({
             type: "user_created",
             action: ws.id
-        }))
-        
+        }));
     }
 
     add_user_array(ws) {
-        this.ARRAY_USERS[ws.id] = {
-            id_base: ws.id_base,
+        this.ARRAY_USERS.push({
+            id: ws.id,
             nick: ws.nick,
             lvl: ws.lvl,
             clan: ws.clan
-        }
-        this.online = Object.keys(this.ARRAY_USERS).length
-        // console.log(this.ARRAY_USERS)
-        // console.log(this.online)
-        console.log("new user (added)");
+        });
     }
-
+ 
     delete_user(ws) {
-        delete this.USERS[ws.id];
-        delete this.ARRAY_USERS[ws.id]; // в лобби
+        delete this[ws.id];
+        let index = 0;
+        this.ARRAY_USERS.forEach(obj => {
+            if (obj.id === ws.id) {
+                this.ARRAY_USERS.splice(index, 1)
+            };
+            index++;
+        });
     }
 
     get_users() {
@@ -266,14 +267,44 @@ class Users {
             return false;
         }; 
     }
-};
+
+    kick(ws) {
+        EVENTS.send(ws, "ERROR", "kick");
+        EVENTS.disconnect(ws);
+        ws.destroy();
+    }
+
+    not_auth(ws) {
+        if (String(ws.id) == "undefined") {
+            ws.destroy();
+            console.log("user session destroy(long deactive)");
+        };
+    }
+
+    private_chat(ws, json) {
+        if (json.action2 in this) {
+            const user = this[json.action2];
+            const msg = {
+                id: ws.id,
+                id_to: user.id,
+                nick: ws.nick,
+                nick_to: user.nick,
+                msg: json.action
+            };
+            EVENTS.send(this[json.action2], "PRIVATE_CHAT", msg);
+            EVENTS.send(ws, "PRIVATE_CHAT", msg);
+        }
+        else {
+            EVENTS.send(ws, "ERROR", "the user has logged out of the game");
+        };
+    }
+}; 
 USERS = new Users();
 
 class Rooms {
     create_room(ws, json) {
-        const room_id = GET_UID("room");
-        const info = json.action;
-
+        const room_id = SERVER_INFO.add_room();
+        const info = json.action; // обьект с настройками
         this[room_id] = {
             info: {
                 name: info.name,
@@ -292,7 +323,8 @@ class Rooms {
                 red: 0,
                 blue: 0
             },
-            start: false
+            start: false,
+            observers: 0
         };
         if (info.mode == "CTF") {
             this[room_id]["flag"] = {
@@ -300,86 +332,100 @@ class Rooms {
                 blue: -1
             }
         }
-        SERVER_INFO.add_room(room_id)
-        ROOMS.join_room(ws, room_id) // вызываю метод войти в комнату после того как комната создана
-        //console.log(this[room_id])
+        ROOMS.join_room(ws, room_id, "PLAYER") // вызываю метод войти в комнату после того как комната создана
     }
 
-    join_room(ws, roomID) {
-        const getTeam = this[roomID]["info"]["mode"] != "DM" ? this.get_team(roomID) : "red"
-        this[roomID]["players"][ws.id] = { // создаю обьект игрока в комнате
-            clan: ws.clan,
-            lvl: ws.lvl,
-            nick: ws.nick,
-            kills: 0,
-            deaths: 0,
-            team : getTeam,
-            id_base: ws.id_base
-        }
-        this[roomID]["info"]["cur_players"] += 1;
-        EVENTS.subscribe(ws, roomID); // подписываю
-        SERVER_INFO.add_object(roomID, ws.id); // добавляю обьект инфы игрока
-        server.publish(roomID, JSON.stringify({
-                type: "joined",
+    join_room(ws, roomID, param) {
+        if (param == "PLAYER") { // player
+            const getTeam = this[roomID]["info"]["mode"] != "DM" ? this.get_team(roomID) : "red";
+            this[roomID]["players"][ws.id] = { // создаю обьект игрока в комнате
+                id: ws.id,
+                clan: ws.clan,
+                lvl: ws.lvl,
+                nick: ws.nick,
+                kills: 0,
+                deaths: 0,
+                team : getTeam
+            };
+            this.setANDget_countPlayers(roomID);
+            EVENTS.subscribe(ws, roomID); // подписываю
+            SERVER_INFO.add_object(roomID, ws.id); // добавляю обьект инфы игрока
+            server.publish(roomID, JSON.stringify({
+                    type: "joined",
+                    action: this[roomID],
+                    action2: ws.id,
+                    date: getDate()
+            }));
+        } else { // spectator
+            this[roomID]["observers"] += 1;
+            EVENTS.subscribe(ws, roomID); // подписываю
+            EVENTS.publish(roomID, "STATE", this[roomID]); // броадкаст инфы
+            ws.send(JSON.stringify({
+                type: "spectate",
                 action: this[roomID],
-                action2: ws.id
-        }));
+                date: getDate()
+            }));
+        };
     }
 
-    leave_room(ws) {
-        const roomID = ws.room_id;
+    leave_room(ws) { 
+        const roomID = ws.roomID;
         const answer = {
             type: "INFO",
             action: "LEAVE",
             action2: ws.id
         }; 
         if (roomID in this) {
-            delete this[roomID]["players"][ws.id];
-            this[roomID]["info"]["cur_players"] -= 1;
-            EVENTS.subscribe(ws, "LOBBY");
+            if (ws.id in this[roomID]["players"]) {
+                delete this[roomID]["players"][ws.id];
 
-            ws.send(JSON.stringify(answer));
-            server.publish(roomID, JSON.stringify(answer)); 
+                ws.send(JSON.stringify(answer));
+                server.publish(roomID, JSON.stringify(answer)); 
 
-            SERVER_INFO.delete_object(roomID, ws.id);
-            if (this[roomID]["info"]["cur_players"] < 1) {
-                delete this[roomID]
-                console.log("room delete (players was 0)")
+                EVENTS.subscribe(ws, "LOBBY");
+                SERVER_INFO.delete_object(roomID, ws.id);
+
+                if (this.setANDget_countPlayers(roomID) < 1) {
+                    // SERVER_INFO.delete_room(roomID);
+                } 
+            } else {
+                if (this[roomID]["observers"] > 0) {
+                    this[roomID]["observers"] -= 1;
+                }
+                EVENTS.subscribe(ws, "LOBBY");
+                EVENTS.publish(roomID, "STATE", this[roomID]); // броадкаст инфы
+                ws.send(JSON.stringify(answer));
             }
-        }
+        } 
         else {
-            EVENTS.subscribe(ws, "LOBBY");
             ws.send(JSON.stringify(answer));
-        };
+        }
     }
  
-    is_full(roomID) {
-        const curPlayers = this[roomID]["info"]["cur_players"];
-        const maxPlayers = this[roomID]["info"]["max_players"];
-        return curPlayers >=  maxPlayers;
+    is_full(roomID, mode) {
+        if (mode == "PLAYER") {
+            const curPlayers = this[roomID]["info"]["cur_players"];
+            const maxPlayers = this[roomID]["info"]["max_players"];
+            return curPlayers <  maxPlayers;
+        } else {
+            return this[roomID]["observers"] < 10; // если наблюдателей 9 или меньше то возвращает true
+        }
     }
 
     get_team(roomID) {
         const TEAMS = this[roomID]["players"];
             let red = 0; // считает красных
             let blue = 0; // считает синих
-            for (var s in TEAMS) {
-                    if (TEAMS[s].team == "red") {
-                        red++;
-                    }
-                    else {
-                        blue++
-                    }
-            } 
-            if (red <= blue) { // set red team
-                return "red";
-            }
+            for (var index in TEAMS) {
+                if (TEAMS[index].team == "red") red++;
+                else blue++;
+            };
+            if (red <= blue) return "red"; // set red team
             return "blue";
-
     }
 
     death(ws, json) {
-        const roomID = ws.room_id;
+        const roomID = ws.roomID;
         const playerDead = json.action;
         const playerKill = json.action2;
         if (USERS.is_alive(playerDead)) {
@@ -391,15 +437,15 @@ class Rooms {
                 json.action4 = countKill;
                 EVENTS.ajax("", "add_info", {
                     type: "add_kill_dead",
-                    who_kill: USERS[playerKill]["id_base"],
-                    who_dead: USERS[playerDead]["id_base"],
+                    who_kill: USERS[playerKill]["id"],
+                    who_dead: USERS[playerDead]["id"],
                     mnojitel: countKill
                 });
         }
         else {
             EVENTS.ajax("", "add_info", {
                 type: "add_dead",
-                who_dead: USERS[playerDead]["id_base"]
+                who_dead: USERS[playerDead]["id"]
             });
         };
             server.publish(roomID, JSON.stringify(json));
@@ -432,31 +478,23 @@ class Rooms {
             } else {
                 EVENTS.publish(roomID, "END_GAME", playerKill);
             };
-            this.winner_players("win_tour", roomID, teamKill);
+            this.win_tour(roomID, teamKill);
             setTimeout(() => { SERVER_INFO.delete_room(roomID); }, 5000); // через 5 сек удаляется комната
         };
     }
 
-    winner_players(url, roomID, teamKill) { // победители в команде 
-        const players_win = {};
-        Object.values(this[roomID]["players"]).forEach(player => {
-            if (player.team == teamKill) {
-                players_win[player.id_base] = {
-                    money: this[roomID]["info"]["money"],
-                    cash: this[roomID]["info"]["cash"]
-                } 
-            }
-        });
-        console.log(players_win);
-
+    win_tour(roomID, teamKill) { // победители в команде
         EVENTS.ajax("", "add_info", {
-            type: url,
-            team_win: players_win
+            type: "win_tour",
+            team_win: teamKill,
+            money: this[roomID]["info"]["money"],
+            cash: this[roomID]["info"]["cash"],
+            players: this[roomID]["players"]
         });
     }
 
     flag(ws, json) {
-        const roomID = ws.room_id;
+        const roomID = ws.roomID;
         const playerID = ws.id;
         switch (json.action) {
             case "TAKE_FLAG": {
@@ -464,9 +502,9 @@ class Rooms {
                 if (this[roomID]["flag"][json.action3] == -1) {
                     this[roomID]["flag"][json.action3] = playerID;
                     server.publish(roomID, JSON.stringify(json));
-                    console.log("TAKE FLAG: " + JSON.stringify(this[roomID]["flag"]));
+                    // console.log("TAKE FLAG: " + JSON.stringify(this[roomID]["flag"]));
                 } else {
-                    console.log("flag have own");
+                    // console.log("flag have own");
                 };
                 break;
             }
@@ -474,7 +512,7 @@ class Rooms {
             case "LOST_FLAG": {
                 this[roomID]["flag"][json.action3] = -1
                 server.publish(roomID, JSON.stringify(json));
-                console.log("LOST FLAG: " + JSON.stringify(this[roomID]["flag"]));
+                // console.log("LOST FLAG: " + JSON.stringify(this[roomID]["flag"]));
                 break;
             }
 
@@ -492,7 +530,7 @@ class Rooms {
                 EVENTS.publish(roomID, "STATE", this[roomID]); // броадкаст инфы
                 EVENTS.ajax("", "add_info", {
                     type: "add_flag",
-                    who_flag: USERS[ws.id]["id_base"]
+                    who_flag: USERS[ws.id]["id"]
                 });
                 break;
             }
@@ -500,7 +538,7 @@ class Rooms {
             case "RETURN_FLAG": {
                 this[roomID]["flag"][json.action3] = -1
                 server.publish(roomID, JSON.stringify(json));
-                console.log("LOST FLAG: " + JSON.stringify(this[roomID]["flag"]));
+                // console.log("LOST FLAG: " + JSON.stringify(this[roomID]["flag"]));
                 break;
             }
         }
@@ -542,38 +580,42 @@ class Rooms {
             }));
         };
     }
-};
-ROOMS = new Rooms();
 
- class Chat { 
+    get_rooms() {
+        return this;
+    }
+
+    setANDget_countPlayers(roomID) {
+        this[roomID]["info"]["cur_players"] = Object.keys(this[roomID]["players"]).length;
+        return this[roomID]["info"]["cur_players"];
+    }
+};
+ROOMS = new Rooms(); 
+
+ class Chat {
     constructor() {
-        this.CHAT = []
+        this.CHAT = [{
+            id: "WARNING",
+            nick: "",
+            msg: "[color=orangered]don't give your password to anyone! real moderators will never ask you for a password and other data of your account![/color]"
+        }]
         this.chatevery = 0;
     }
 
-    add_message(ws, json) {
-        if (ws != "system") {
-            this.chatevery += 1;
+    add_message(ws, json) { this.chatevery += 1;
+        this.CHAT.push({
+            id: ws.id,
+            nick: ws.nick,
+            msg: json.action
+        });
+        if (this.chatevery >= 10) {
+            this.chatevery = 0;
             this.CHAT.push({
-                id: ws.id,
-                id_base: ws.id_base,
-                clan: ws.clan,
-                nick: ws.nick,
-                msg: json.action
-            });
-            if (this.chatevery >= 10) {
-                this.add_message("system", "");
-                this.chatevery = 0;
-            };
-        } else { 
-            this.CHAT.push({
-                id: -1,
-                id_base: -1,
-                clan: "MOD",
+                id: "WARNING",
                 nick: "",
-                msg: "[color=red]Don't give your password to anyone! Real moderators will never ask you for a password![/color]"
+                msg: "[color=orangered]Don't give your password to anyone! Real moderators will never ask you for a password and other data of your account![/color]"
             });
-        };
+        }
         if (this.CHAT.length > 49) {
             this.CHAT.splice(0, 1);
         };
@@ -583,16 +625,20 @@ ROOMS = new Rooms();
     get_chat() {
         return Object.assign({}, this.CHAT);
     }
+
 };
 CHAT = new Chat();
 
 class ServerInfo {
     constructor() {
         this.SERVER_INFO = {}
+        this.set_roomID = 0;
     }
 
-    add_room(roomID) {
+    add_room() {
+        const roomID = String(this.set_roomID++);
         this[roomID] = {};
+        return roomID;
     }
 
     add_object(roomID, playerID) {
@@ -603,8 +649,10 @@ class ServerInfo {
     }
 
     delete_room(roomID) {
-        delete ROOMS[roomID];
-        delete this[roomID];
+        if (roomID in ROOMS) {
+            delete ROOMS[roomID];
+            delete this[roomID];
+        };
     }
 
     delete_object(roomID, playerID) {
@@ -633,29 +681,6 @@ class ServerInfo {
 };
 SERVER_INFO = new ServerInfo();
 
-function GET_UID(type) { // генерация айди
-    function getRandInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-    }
-    function shuffle(list) {
-        for (let i = list.length - 1; i > 0; i--) {
-            const j = getRandInt(0, i);
-            [list[i], list[j]] = [list[j], list[i]];
-        } 
-        return list;
-}
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    const list = shuffle(chars.split(""));
-    let result = "";
-    for (let i = 0; i < 4; i++) result += list[i];
-
-    if (type == "player") {
-        if (result in USERS) return GET_UID();
-        else return result;
-    }
-    else {
-        if (result in ROOMS) return GET_UID();
-        else return result;
-    }
-
-}
+function getDate() {
+    return new Date().toLocaleDateString();
+};
